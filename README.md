@@ -1,66 +1,92 @@
 # dMACQ Activity Feed
 
-A simple activity feed built with MongoDB, Express, React, and Node.js.
+Activity feed app built with MongoDB, Express, React, and Node.js.
 
-## What it does
+## Features
 
 - Create and view activities
-- Filter by activity type (debounced — no API spam on rapid clicks)
-- Infinite scroll with cursor-based pagination
-- Optimistic UI (activity appears instantly before API responds)
-- Tenant isolation (each tenant only sees their own data)
-- Loading states and proper empty/error handling
+- Filter by type with debounce (400ms delay before API call)
+- Infinite scroll using cursor-based pagination
+- Optimistic UI on create (instant feedback, rollback on failure)
+- Tenant isolation via `X-Tenant-Id` header
+- Proper loading, empty, and error states
 
 ## Project Structure
 
 ```
 dMACQ/
-├── backend/    → Express + MongoDB API
-├── frontend/   → React app (Vite)
-└── package.json → runs both together
+├── backend/
+│   └── src/
+│       ├── server.js
+│       ├── config/database.js
+│       ├── models/Activity.js
+│       ├── middleware/tenantIsolation.js
+│       └── routes/activities.js
+├── frontend/
+│   └── src/
+│       ├── App.jsx
+│       ├── services/activityService.js
+│       └── components/
+│           ├── ActivityFeed.jsx   ← all state lives here
+│           ├── ActivityItem.jsx
+│           ├── ActivityFilter.jsx
+│           └── ActivityForm.jsx
+└── package.json
 ```
 
 ## Setup
 
 ### 1. Install dependencies
 
+**Backend** (open a terminal in the `backend` folder)
 ```bash
-npm run install:all
+cd backend
+npm install
 ```
 
-### 2. Configure backend environment
-
+**Frontend** (open a terminal in the `frontend` folder)
 ```bash
-cp backend/.env.example backend/.env
+cd frontend
+npm install
 ```
 
-Fill in your MongoDB Atlas URI in `backend/.env`:
+### 2. Environment
 
-```
+Create a `.env` file inside the `backend` folder and add:
+
+```env
+PORT=5000
 MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/dmacq-activity
+CORS_ORIGIN=http://localhost:5173
+NODE_ENV=development
 ```
 
 ### 3. Run
 
+**Backend**
 ```bash
-# Run both frontend and backend together
+cd backend
 npm run dev
-
-# Or run separately
-cd backend && npm run dev
-cd frontend && npm run dev
 ```
 
-- Backend: http://localhost:5000
-- Frontend: http://localhost:5173
+**Frontend** (in a separate terminal)
+```bash
+cd frontend
+npm run dev
+```
+
+- Backend → http://localhost:5000
+- Frontend → http://localhost:5173
 
 ## API
 
-### Create activity
+**Headers required on every request**
 ```
-POST /api/activities
-Header: X-Tenant-Id: your-tenant-id
+X-Tenant-Id: your-tenant-id
+```
 
+**POST /api/activities**
+```json
 {
   "actorId": "user-1",
   "actorName": "John Doe",
@@ -69,37 +95,49 @@ Header: X-Tenant-Id: your-tenant-id
 }
 ```
 
-### Get activities
+**GET /api/activities**
 ```
-GET /api/activities?limit=20&cursor=<ISO_DATE>&type=CREATE
-Header: X-Tenant-Id: your-tenant-id
+?limit=20&cursor=<ISO_DATE>&type=CREATE
 ```
 
-## Tech Stack
+Returns:
+```json
+{
+  "activities": [],
+  "nextCursor": "2026-04-25T10:00:00.000Z",
+  "count": 20
+}
+```
 
-| Part | Tech |
-|------|------|
-| Frontend | React 18, Vite |
-| Backend | Node.js, Express |
-| Database | MongoDB (Atlas) |
-| ODM | Mongoose |
+## Frontend State
+
+All state is managed directly in `ActivityFeed.jsx` using `useState`, `useEffect`, and `useCallback`. No Redux, no custom hooks.
+
+| State | Purpose |
+|-------|---------|
+| `activities` | list of activity items |
+| `cursor` | ISO date of last fetched item for pagination |
+| `hasMore` | whether more pages exist |
+| `loading` | shows spinner during fetch |
+| `error` | shows error banner on failed fetch |
+| `filter` | selected activity type filter |
 
 ## Deployment
 
-- Frontend → Vercel (set root directory to `frontend`)
-- Backend → Render (set root directory to `backend`)
-- Database → MongoDB Atlas (free tier)
+| Part | Host |
+|------|------|
+| Frontend | Vercel — root directory: `frontend` |
+| Backend | Render — root directory: `backend` |
+| Database | MongoDB Atlas |
 
-### Environment variables
-
-**Vercel (frontend)**
+**Vercel env vars**
 ```
-VITE_API_URL = https://your-backend.onrender.com/api
+VITE_API_URL=https://your-backend.onrender.com/api
 ```
 
-**Render (backend)**
+**Render env vars**
 ```
-MONGODB_URI = your atlas connection string
-CORS_ORIGIN = https://your-app.vercel.app
-NODE_ENV    = production
+MONGODB_URI=your atlas uri
+CORS_ORIGIN=https://your-app.vercel.app
+NODE_ENV=production
 ```
