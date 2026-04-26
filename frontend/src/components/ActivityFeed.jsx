@@ -17,7 +17,6 @@ export default function ActivityFeed({ tenantId }) {
   const loadingRef  = useRef(false);
   const sentinelRef = useRef(null);
 
-  // Fetch a page — all dynamic values passed as args to avoid stale closures
   const fetchPage = useCallback(
     async (cursorValue, filterValue, append) => {
       if (loadingRef.current && append) return;
@@ -31,6 +30,8 @@ export default function ActivityFeed({ tenantId }) {
         setCursor(data.nextCursor);
         setHasMore(!!data.nextCursor);
       } catch (err) {
+        // On filter change errors, don't wipe existing activities — just show the banner
+        if (!append) setActivities([]);
         setError(err.message || 'Failed to load activities.');
       } finally {
         loadingRef.current = false;
@@ -40,18 +41,23 @@ export default function ActivityFeed({ tenantId }) {
     [tenantId]
   );
 
-  // Re-fetch from scratch on filter or tenant change
+  // Debounce filter changes by 400ms — shows spinner immediately, fires API after delay
   useEffect(() => {
-    fetchPage(null, filter, false);
+    setLoading(true);  // spinner shows right away on filter click
+    setError(null);
+
+    const timer = setTimeout(() => {
+      fetchPage(null, filter, false);
+    }, 400);
+
+    return () => clearTimeout(timer); // cancel if filter changes again within 400ms
   }, [filter, tenantId, fetchPage]);
 
-  // Load next page — triggered by IntersectionObserver
   const loadMore = useCallback(() => {
     if (!hasMore || loadingRef.current) return;
     fetchPage(cursor, filter, true);
   }, [cursor, filter, hasMore, fetchPage]);
 
-  // Infinite scroll — watches the sentinel div at the bottom of the list
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -63,7 +69,6 @@ export default function ActivityFeed({ tenantId }) {
     return () => observer.disconnect();
   }, [loadMore]);
 
-  // Optimistic create — prepend temp item, swap with real doc on success, rollback on failure
   const addActivity = useCallback(
     async (formData) => {
       const tempId = `opt-${Date.now()}`;
@@ -92,7 +97,12 @@ export default function ActivityFeed({ tenantId }) {
 
       <ActivityFilter types={ACTIVITY_TYPES} selected={filter} onSelect={setFilter} />
 
-      {error && <div className="error" role="alert">Error: {error}</div>}
+      {/* Only show error banner when not loading — avoids flash of error during fetch */}
+      {error && !loading && (
+        <div className="error" role="alert">
+          Failed to load activities. Please try again.
+        </div>
+      )}
 
       <div className="activity-list">
         {activities.map(activity => (
@@ -101,7 +111,8 @@ export default function ActivityFeed({ tenantId }) {
 
         {loading && <div className="loading">Loading activities</div>}
 
-        {!loading && activities.length === 0 && (
+        {/* Empty state: only when done loading, no error, and no results */}
+        {!loading && !error && activities.length === 0 && (
           <div className="empty">
             <p>No activities found.</p>
             <p>Try a different filter or create one above.</p>
